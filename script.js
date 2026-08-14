@@ -4,7 +4,7 @@ let defaultYear = new Date().getFullYear();
 // Initialize Zoho Embedded App SDK
 ZOHO.embeddedApp.on("PageLoad", async function (data) {
   // Modal ki width/height badhane ke liye
-  ZOHO.CRM.UI.Resize({ height: "700px", width: "90%" }).then(function () {
+  ZOHO.CRM.UI.Resize({ height: "700px", width: "60%" }).then(function () {
     console.log("Widget resized");
   });
 
