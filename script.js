@@ -2,6 +2,10 @@ let allDeals = [];
 
 // Initialize Zoho Embedded App SDK
 ZOHO.embeddedApp.on("PageLoad", async function (data) {
+   ZOHO.CRM.UI.Resize({ height: "700px", width: "90%" }).then(function () {
+    console.log("Widget resized");
+  });
+  
   populateYearDropdown();
 
   // Thoda delay do taaki SDK ka parent-window bridge fully ready ho jaye
