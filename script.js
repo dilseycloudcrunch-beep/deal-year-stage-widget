@@ -3,7 +3,11 @@ let allDeals = [];
 // Initialize Zoho Embedded App SDK
 ZOHO.embeddedApp.on("PageLoad", async function (data) {
   populateYearDropdown();
-  await fetchDeals();
+
+  // Thoda delay do taaki SDK ka parent-window bridge fully ready ho jaye
+  setTimeout(async function () {
+    await fetchDeals();
+  }, 400);
 });
 
 ZOHO.embeddedApp.init();
@@ -12,7 +16,7 @@ ZOHO.embeddedApp.init();
 function populateYearDropdown() {
   const yearSelect = document.getElementById("yearSelect");
   const currentYear = new Date().getFullYear();
-  
+
   for (let year = currentYear + 1; year >= currentYear - 5; year--) {
     const option = document.createElement("option");
     option.value = year;
@@ -20,7 +24,6 @@ function populateYearDropdown() {
     if (year === currentYear) option.selected = true;
     yearSelect.appendChild(option);
   }
-
   yearSelect.addEventListener("change", renderStagesAndDeals);
 }
 
@@ -41,7 +44,8 @@ async function fetchDeals() {
     }
   } catch (error) {
     console.error("Error fetching Deals:", error);
-    document.getElementById("stagesContainer").innerHTML = "<p>Error loading Deals data.</p>";
+    document.getElementById("stagesContainer").innerHTML =
+      "<p>Error loading Deals data. Check console (F12) for details.</p>";
   }
 }
 
@@ -51,7 +55,7 @@ function renderStagesAndDeals() {
   const container = document.getElementById("stagesContainer");
   container.innerHTML = "";
 
-  // Filter deals based on Closing Date / Created Time year
+  // Filter deals based on Closing Date year
   const filteredDeals = allDeals.filter(deal => {
     const dateStr = deal.Closing_Date || deal.Created_Time;
     if (!dateStr) return false;
