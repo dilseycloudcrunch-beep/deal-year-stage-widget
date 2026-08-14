@@ -2,7 +2,7 @@ let allDeals = [];
 
 // Initialize Zoho Embedded App SDK
 ZOHO.embeddedApp.on("PageLoad", async function (data) {
-   ZOHO.CRM.UI.Resize({ height: "700px", width: "90%" }).then(function () {
+   ZOHO.CRM.UI.Resize({ height: "700px", width: "70%" }).then(function () {
     console.log("Widget resized");
   });
   
