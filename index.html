@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deal Year Stage View</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Zoho SDK -->
+  <script src="https://live.zwidgets.com/js-sdk/1.1/ZohoEmbededAppSDK.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h2>Deal Year Stage View</h2>
+    
+    <!-- Year Dropdown Filter -->
+    <div class="filter-section">
+      <label for="yearSelect">Select Year: </label>
+      <select id="yearSelect">
+        <!-- Years will be populated dynamically via JS -->
+      </select>
+    </div>
+
+    <!-- Container for Stages and Deals -->
+    <div id="stagesContainer" class="stages-container">
+      <p class="loading-text">Loading Deals...</p>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
