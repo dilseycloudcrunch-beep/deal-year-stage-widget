@@ -1,28 +1,26 @@
 let allDeals = [];
-let defaultYear = new Date().getFullYear();
 
 // Initialize Zoho Embedded App SDK
 ZOHO.embeddedApp.on("PageLoad", async function (data) {
-  // Modal ki width/height badhane ke liye
-  ZOHO.CRM.UI.Resize({ height: "700px", width: "60%" }).then(function () {
+   ZOHO.CRM.UI.Resize({ height: "700px", width: "50%" }).then(function () {
     console.log("Widget resized");
   });
-
+  
   populateYearDropdown();
-  document.getElementById("refreshBtn").addEventListener("click", handleRefresh);
 
   // Thoda delay do taaki SDK ka parent-window bridge fully ready ho jaye
   setTimeout(async function () {
     await fetchDeals();
   }, 400);
 });
+
 ZOHO.embeddedApp.init();
 
 // Populate Year Dropdown dynamically (e.g., last 5 years + next year)
 function populateYearDropdown() {
   const yearSelect = document.getElementById("yearSelect");
   const currentYear = new Date().getFullYear();
-  defaultYear = currentYear;
+
   for (let year = currentYear + 1; year >= currentYear - 5; year--) {
     const option = document.createElement("option");
     option.value = year;
@@ -33,14 +31,6 @@ function populateYearDropdown() {
   yearSelect.addEventListener("change", renderStagesAndDeals);
 }
 
-// Refresh button click: year ko default (current year) par wapas le aao aur deals fresh fetch karo
-async function handleRefresh() {
-  const yearSelect = document.getElementById("yearSelect");
-  yearSelect.value = defaultYear;
-  document.getElementById("stagesContainer").innerHTML = "<p class='loading-text'>Refreshing...</p>";
-  await fetchDeals();
-}
-
 // Fetch all Deals using Zoho SDK API
 async function fetchDeals() {
   try {
@@ -49,6 +39,7 @@ async function fetchDeals() {
       sort_order: "desc",
       per_page: 200
     });
+
     if (response && response.data) {
       allDeals = response.data;
       renderStagesAndDeals();
@@ -62,7 +53,7 @@ async function fetchDeals() {
   }
 }
 
-// Render Stages (name + count only) and filtered Deals according to selected Year
+// Render Stages and filtered Deals according to selected Year
 function renderStagesAndDeals() {
   const selectedYear = parseInt(document.getElementById("yearSelect").value);
   const container = document.getElementById("stagesContainer");
@@ -91,17 +82,15 @@ function renderStagesAndDeals() {
     return;
   }
 
-  // Build columns: sirf Stage name + count dikhega, click pe records expand honge
+  // Build Kanban/Column UI for each Stage
   Object.keys(dealsByStage).forEach(stage => {
     const stageColumn = document.createElement("div");
     stageColumn.className = "stage-column";
 
     const stageHeader = document.createElement("div");
     stageHeader.className = "stage-title";
-    stageHeader.innerHTML = `<span>${stage} (${dealsByStage[stage].length})</span><span class="arrow">&#9656;</span>`;
-
-    const dealsWrapper = document.createElement("div");
-    dealsWrapper.className = "stage-deals";
+    stageHeader.innerHTML = `<span>${stage}</span> <span>(${dealsByStage[stage].length})</span>`;
+    stageColumn.appendChild(stageHeader);
 
     dealsByStage[stage].forEach(deal => {
       const dealCard = document.createElement("div");
@@ -111,24 +100,9 @@ function renderStagesAndDeals() {
         <div class="deal-info">Amount: $${deal.Amount || 0}</div>
         <div class="deal-info">Closing: ${deal.Closing_Date || "N/A"}</div>
       `;
-
-      // Deal card pe click karte hi CRM me record khul jaye
-      dealCard.addEventListener("click", function (e) {
-        e.stopPropagation(); // stage collapse/expand trigger na ho
-        ZOHO.CRM.UI.Record.open({ Entity: "Deals", RecordID: deal.id });
-      });
-
-      dealsWrapper.appendChild(dealCard);
+      stageColumn.appendChild(dealCard);
     });
 
-    // Click pe expand/collapse
-    stageHeader.addEventListener("click", function () {
-      stageHeader.classList.toggle("open");
-      dealsWrapper.classList.toggle("open");
-    });
-
-    stageColumn.appendChild(stageHeader);
-    stageColumn.appendChild(dealsWrapper);
     container.appendChild(stageColumn);
   });
 }
