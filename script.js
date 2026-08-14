@@ -51,15 +51,12 @@ async function fetchDeals() {
   }
 }
 
-// Render Stage Pills (with counts) for the selected Year
+// Render Stage rows (one below another). Each row expands to show its deals on click.
 function renderStages() {
   const selectedYear = parseInt(document.getElementById("yearSelect").value);
   const container = document.getElementById("stagesContainer");
   container.innerHTML = "";
-
-  // Reset the open deals panel whenever year changes
   activeStage = null;
-  document.getElementById("dealsPanel").style.display = "none";
 
   // Filter deals based on Closing Date year
   const filteredDeals = allDeals.filter(deal => {
@@ -84,48 +81,48 @@ function renderStages() {
     return;
   }
 
-  // Build a pill/button for each Stage with its count
+  // Build one block per Stage: header row + hidden deals list below it
   Object.keys(dealsByStage).forEach(stage => {
+    const stageBlock = document.createElement("div");
+    stageBlock.className = "stage-block";
+    stageBlock.id = "stage-" + stage.replace(/\s+/g, "-");
+
     const pill = document.createElement("button");
     pill.className = "stage-pill";
     pill.type = "button";
-    pill.innerHTML = `${stage} (${dealsByStage[stage].length})`;
-    pill.addEventListener("click", () => toggleStage(stage, pill));
-    container.appendChild(pill);
+    pill.innerHTML = `<span>${stage} (${dealsByStage[stage].length})</span><span class="stage-arrow">&#9656;</span>`;
+    pill.addEventListener("click", () => toggleStage(stage, stageBlock));
+
+    const dealsList = document.createElement("div");
+    dealsList.className = "deals-list";
+    dealsByStage[stage].forEach(deal => {
+      const dealCard = document.createElement("div");
+      dealCard.className = "deal-card";
+      dealCard.innerHTML = `
+        <div class="deal-name">${deal.Deal_Name || "Unnamed Deal"}</div>
+        <div class="deal-info">Amount: $${deal.Amount || 0}</div>
+        <div class="deal-info">Closing: ${deal.Closing_Date || "N/A"}</div>
+      `;
+      dealsList.appendChild(dealCard);
+    });
+
+    stageBlock.appendChild(pill);
+    stageBlock.appendChild(dealsList);
+    container.appendChild(stageBlock);
   });
 }
 
-// Show/hide the deals list for the clicked Stage
-function toggleStage(stage, pillEl) {
-  const panel = document.getElementById("dealsPanel");
-  const allPills = document.querySelectorAll(".stage-pill");
+// Expand/collapse the clicked Stage's deals, right below its own row
+function toggleStage(stage, stageBlockEl) {
+  const wasActive = stageBlockEl.classList.contains("active");
 
-  // Clicking the already-active stage again closes the panel
-  if (activeStage === stage) {
+  // Close whichever stage was open before
+  document.querySelectorAll(".stage-block.active").forEach(el => el.classList.remove("active"));
+
+  if (wasActive) {
     activeStage = null;
-    panel.style.display = "none";
-    allPills.forEach(p => p.classList.remove("active"));
-    return;
+  } else {
+    activeStage = stage;
+    stageBlockEl.classList.add("active");
   }
-
-  activeStage = stage;
-  allPills.forEach(p => p.classList.remove("active"));
-  pillEl.classList.add("active");
-
-  document.getElementById("dealsPanelTitle").innerHTML = `${stage} (${dealsByStage[stage].length})`;
-
-  const dealsList = document.getElementById("dealsList");
-  dealsList.innerHTML = "";
-  dealsByStage[stage].forEach(deal => {
-    const dealCard = document.createElement("div");
-    dealCard.className = "deal-card";
-    dealCard.innerHTML = `
-      <div class="deal-name">${deal.Deal_Name || "Unnamed Deal"}</div>
-      <div class="deal-info">Amount: $${deal.Amount || 0}</div>
-      <div class="deal-info">Closing: ${deal.Closing_Date || "N/A"}</div>
-    `;
-    dealsList.appendChild(dealCard);
-  });
-
-  panel.style.display = "block";
 }
