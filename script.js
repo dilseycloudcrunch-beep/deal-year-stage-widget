@@ -148,6 +148,7 @@ async function fetchDealsForYear(year) {
     allDeals = yearDeals;
 
     if (allDeals.length > 0) {
+        console.log("Sample deal object:", JSON.stringify(allDeals[0], null, 2));
       populateOwnerDropdown();
       renderStages();
     } else {
