@@ -2,6 +2,7 @@ let allDeals = [];       // currently loaded (selected year's) deals
 let dealsByStage = {};
 let activeStage = null;
 let currentFetchId = 0;  // guards against race conditions between year switches
+let ownerIdToName = {};  // maps Owner id -> Owner full name
 
 // Initialize Zoho Embedded App SDK
 ZOHO.embeddedApp.on("PageLoad", async function (data) {
@@ -12,6 +13,7 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
   populateYearDropdown();
   // Thoda delay do taaki SDK ka parent-window bridge fully ready ho jaye
   setTimeout(async function () {
+    await fetchAllUsers();          // owner id->name map ek hi baar bana lo
     await fetchDealsForYear(getSelectedYear());
   }, 400);
 });
@@ -19,6 +21,32 @@ ZOHO.embeddedApp.init();
 
 function getSelectedYear() {
   return parseInt(document.getElementById("yearSelect").value);
+}
+
+// Fetch all CRM Users once, build an id -> full_name map.
+// Deals only carry Owner.id, so we resolve the actual name from this map.
+async function fetchAllUsers() {
+  try {
+    const response = await ZOHO.CRM.API.getAllRecords({
+      Entity: "users",
+      sort_order: "asc",
+      per_page: 200
+    });
+    if (response && response.users) {
+      response.users.forEach(user => {
+        ownerIdToName[user.id] = user.full_name || user.name || "Unknown";
+      });
+    }
+  } catch (error) {
+    console.error("Error fetching Users:", error);
+  }
+}
+
+// Helper: safely resolve Owner name from the deal's Owner.id via the map
+function getOwnerName(deal) {
+  const ownerId = deal.Owner && deal.Owner.id;
+  if (!ownerId) return null;
+  return ownerIdToName[ownerId] || null;
 }
 
 // Populate Year Dropdown dynamically (e.g., last 5 years + next year)
@@ -45,7 +73,7 @@ function populateOwnerDropdown() {
 
   const ownerNames = new Set();
   allDeals.forEach(deal => {
-    const ownerName = (deal.Owner && deal.Owner.name) ? deal.Owner.name : null;
+    const ownerName = getOwnerName(deal);
     if (ownerName) ownerNames.add(ownerName);
   });
 
@@ -65,6 +93,9 @@ function populateOwnerDropdown() {
   ownerSelect.addEventListener("change", renderStages);
 }
 
+// Fetch ONLY the selected year's Deals using COQL, split month-by-month to stay
+// under Zoho's 2000-offset limit per query. Months are fetched in small parallel
+// batches (not all 12 at once, not one-by-one) to balance speed vs rate limits.
 async function fetchDealsForYear(year) {
   const container = document.getElementById("stagesContainer");
   container.innerHTML = `<p class="loading-text">Loading Deals for ${year}...</p>`;
@@ -108,8 +139,6 @@ async function fetchDealsForYear(year) {
         moreRecords = !!(response && response.info && response.info.more_records) && response.data && response.data.length === limit;
         offset += limit;
       } catch (err) {
-        // Ek month fail ho bhi jaye, baaki months ka data na khoye —
-        // is month ko skip karke jo mil chuka hai wahi return karo.
         console.error(`Error fetching ${year}-${monthStr}:`, err);
         break;
       }
@@ -122,9 +151,8 @@ async function fetchDealsForYear(year) {
     const allMonths = Array.from({ length: 12 }, (_, i) => i + 1);
     const yearDeals = [];
 
-    // Months ko chhote batches me parallel fetch karo (poora saal ek saath nahi)
     for (let i = 0; i < allMonths.length; i += batchSize) {
-      if (thisFetchId !== currentFetchId) return; // stale, abort
+      if (thisFetchId !== currentFetchId) return;
 
       const batch = allMonths.slice(i, i + batchSize);
       const batchResults = await Promise.all(batch.map(m => fetchMonth(m)));
@@ -139,7 +167,6 @@ async function fetchDealsForYear(year) {
     allDeals = yearDeals;
 
     if (allDeals.length > 0) {
-       console.log("Sample deal object:", JSON.stringify(allDeals[0], null, 2));
       populateOwnerDropdown();
       renderStages();
     } else {
@@ -161,7 +188,7 @@ function renderStages() {
 
   const filteredDeals = allDeals.filter(deal => {
     if (selectedOwner !== "All") {
-      const ownerName = (deal.Owner && deal.Owner.name) ? deal.Owner.name : null;
+      const ownerName = getOwnerName(deal);
       if (ownerName !== selectedOwner) return false;
     }
     return true;
@@ -197,10 +224,12 @@ function renderStages() {
     dealsByStage[stage].forEach(deal => {
       const dealCard = document.createElement("div");
       dealCard.className = "deal-card";
+      const ownerName = getOwnerName(deal) || "N/A";
       dealCard.innerHTML = `
         <div class="deal-name">${deal.Deal_Name || "Unnamed Deal"}</div>
         <div class="deal-info">Amount: $${deal.Amount || 0}</div>
         <div class="deal-info">Closing: ${deal.Closing_Date || "N/A"}</div>
+        <div class="deal-info">Owner: ${ownerName}</div>
       `;
       dealsList.appendChild(dealCard);
     });
