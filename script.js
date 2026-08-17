@@ -66,9 +66,9 @@ function populateOwnerDropdown() {
 }
 
 // Fetch ONLY the selected year's Deals using COQL, split month-by-month to stay
-// under Zoho's 2000-offset limit per query, and paginated in batches of 200.
-// A fetchId guard ensures that if the user switches years quickly, an older
-// in-flight request can never overwrite the results of a newer one.
+// under Zoho's 2000-offset limit per query. All 12 months are fetched in
+// PARALLEL (not one-by-one) so the wait time is roughly one month's worth,
+// not twelve months' worth.
 async function fetchDealsForYear(year) {
   const container = document.getElementById("stagesContainer");
   container.innerHTML = `<p class="loading-text">Loading Deals for ${year}...</p>`;
@@ -76,47 +76,56 @@ async function fetchDealsForYear(year) {
   currentFetchId += 1;
   const thisFetchId = currentFetchId;
 
-  const yearDeals = []; // local, not shared with other in-flight calls
   const limit = 200;
   const maxOffset = 2000; // Zoho COQL hard limit
 
-  try {
-    for (let month = 1; month <= 12; month++) {
-      if (thisFetchId !== currentFetchId) return; // a newer year was selected, abort
+  // Fetch a single month's deals (with its own pagination inside)
+  async function fetchMonth(month) {
+    const monthStr = String(month).padStart(2, "0");
+    const lastDay = new Date(year, month, 0).getDate();
+    const startDate = `${year}-${monthStr}-01`;
+    const endDate = `${year}-${monthStr}-${lastDay}`;
 
-      const monthStr = String(month).padStart(2, "0");
-      const lastDay = new Date(year, month, 0).getDate();
-      const startDate = `${year}-${monthStr}-01`;
-      const endDate = `${year}-${monthStr}-${lastDay}`;
+    const monthDeals = [];
+    let offset = 0;
+    let moreRecords = true;
 
-      let offset = 0;
-      let moreRecords = true;
+    while (moreRecords) {
+      if (thisFetchId !== currentFetchId) return monthDeals; // stale, stop early
 
-      while (moreRecords) {
-        if (thisFetchId !== currentFetchId) return;
-
-        if (offset > maxOffset) {
-          console.warn(`Offset limit reached for ${year}-${monthStr}, some records may be skipped.`);
-          break;
-        }
-
-        const query = `select Deal_Name, Amount, Closing_Date, Stage, Owner from Deals where Closing_Date between '${startDate}' and '${endDate}' limit ${limit} offset ${offset}`;
-
-        const response = await ZOHO.CRM.API.coql({ select_query: query });
-
-        if (thisFetchId !== currentFetchId) return; // check again after await
-
-        if (response && response.data && response.data.length > 0) {
-          yearDeals.push(...response.data);
-        }
-
-        moreRecords = !!(response && response.info && response.info.more_records) && response.data && response.data.length === limit;
-        offset += limit;
+      if (offset > maxOffset) {
+        console.warn(`Offset limit reached for ${year}-${monthStr}, some records may be skipped.`);
+        break;
       }
+
+      const query = `select Deal_Name, Amount, Closing_Date, Stage, Owner from Deals where Closing_Date between '${startDate}' and '${endDate}' limit ${limit} offset ${offset}`;
+
+      const response = await ZOHO.CRM.API.coql({ select_query: query });
+
+      if (thisFetchId !== currentFetchId) return monthDeals;
+
+      if (response && response.data && response.data.length > 0) {
+        monthDeals.push(...response.data);
+      }
+
+      moreRecords = !!(response && response.info && response.info.more_records) && response.data && response.data.length === limit;
+      offset += limit;
     }
 
-    if (thisFetchId !== currentFetchId) return; // only commit if still latest
+    return monthDeals;
+  }
 
+  try {
+    // Fire all 12 months in parallel instead of waiting one-by-one
+    const monthPromises = [];
+    for (let month = 1; month <= 12; month++) {
+      monthPromises.push(fetchMonth(month));
+    }
+    const monthResults = await Promise.all(monthPromises);
+
+    if (thisFetchId !== currentFetchId) return; // a newer year was selected meanwhile
+
+    const yearDeals = monthResults.flat();
     allDeals = yearDeals;
 
     if (allDeals.length > 0) {
