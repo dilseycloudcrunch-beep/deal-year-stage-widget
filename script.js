@@ -65,10 +65,6 @@ function populateOwnerDropdown() {
   ownerSelect.addEventListener("change", renderStages);
 }
 
-// Fetch ONLY the selected year's Deals using COQL, split month-by-month to stay
-// under Zoho's 2000-offset limit per query. All 12 months are fetched in
-// PARALLEL (not one-by-one) so the wait time is roughly one month's worth,
-// not twelve months' worth.
 async function fetchDealsForYear(year) {
   const container = document.getElementById("stagesContainer");
   container.innerHTML = `<p class="loading-text">Loading Deals for ${year}...</p>`;
@@ -77,9 +73,9 @@ async function fetchDealsForYear(year) {
   const thisFetchId = currentFetchId;
 
   const limit = 200;
-  const maxOffset = 2000; // Zoho COQL hard limit
+  const maxOffset = 2000;
+  const batchSize = 4; // kitne months ek saath parallel chalenge (rate-limit safe)
 
-  // Fetch a single month's deals (with its own pagination inside)
   async function fetchMonth(month) {
     const monthStr = String(month).padStart(2, "0");
     const lastDay = new Date(year, month, 0).getDate();
@@ -91,7 +87,7 @@ async function fetchDealsForYear(year) {
     let moreRecords = true;
 
     while (moreRecords) {
-      if (thisFetchId !== currentFetchId) return monthDeals; // stale, stop early
+      if (thisFetchId !== currentFetchId) return monthDeals;
 
       if (offset > maxOffset) {
         console.warn(`Offset limit reached for ${year}-${monthStr}, some records may be skipped.`);
@@ -100,32 +96,46 @@ async function fetchDealsForYear(year) {
 
       const query = `select Deal_Name, Amount, Closing_Date, Stage, Owner from Deals where Closing_Date between '${startDate}' and '${endDate}' limit ${limit} offset ${offset}`;
 
-      const response = await ZOHO.CRM.API.coql({ select_query: query });
+      try {
+        const response = await ZOHO.CRM.API.coql({ select_query: query });
 
-      if (thisFetchId !== currentFetchId) return monthDeals;
+        if (thisFetchId !== currentFetchId) return monthDeals;
 
-      if (response && response.data && response.data.length > 0) {
-        monthDeals.push(...response.data);
+        if (response && response.data && response.data.length > 0) {
+          monthDeals.push(...response.data);
+        }
+
+        moreRecords = !!(response && response.info && response.info.more_records) && response.data && response.data.length === limit;
+        offset += limit;
+      } catch (err) {
+        // Ek month fail ho bhi jaye, baaki months ka data na khoye —
+        // is month ko skip karke jo mil chuka hai wahi return karo.
+        console.error(`Error fetching ${year}-${monthStr}:`, err);
+        break;
       }
-
-      moreRecords = !!(response && response.info && response.info.more_records) && response.data && response.data.length === limit;
-      offset += limit;
     }
 
     return monthDeals;
   }
 
   try {
-    // Fire all 12 months in parallel instead of waiting one-by-one
-    const monthPromises = [];
-    for (let month = 1; month <= 12; month++) {
-      monthPromises.push(fetchMonth(month));
+    const allMonths = Array.from({ length: 12 }, (_, i) => i + 1);
+    const yearDeals = [];
+
+    // Months ko chhote batches me parallel fetch karo (poora saal ek saath nahi)
+    for (let i = 0; i < allMonths.length; i += batchSize) {
+      if (thisFetchId !== currentFetchId) return; // stale, abort
+
+      const batch = allMonths.slice(i, i + batchSize);
+      const batchResults = await Promise.all(batch.map(m => fetchMonth(m)));
+
+      if (thisFetchId !== currentFetchId) return;
+
+      batchResults.forEach(deals => yearDeals.push(...deals));
     }
-    const monthResults = await Promise.all(monthPromises);
 
-    if (thisFetchId !== currentFetchId) return; // a newer year was selected meanwhile
+    if (thisFetchId !== currentFetchId) return;
 
-    const yearDeals = monthResults.flat();
     allDeals = yearDeals;
 
     if (allDeals.length > 0) {
