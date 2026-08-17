@@ -21,6 +21,12 @@ function getSelectedYear() {
   return parseInt(document.getElementById("yearSelect").value);
 }
 
+// Helper: safely read Owner name regardless of response shape
+// (COQL returns "Owner.name" as a flat key; getAllRecords returns nested Owner.name)
+function getOwnerName(deal) {
+  return deal["Owner.name"] || (deal.Owner && deal.Owner.name) || null;
+}
+
 // Populate Year Dropdown dynamically (e.g., last 5 years + next year)
 function populateYearDropdown() {
   const yearSelect = document.getElementById("yearSelect");
@@ -45,7 +51,7 @@ function populateOwnerDropdown() {
 
   const ownerNames = new Set();
   allDeals.forEach(deal => {
-    const ownerName = (deal.Owner && deal.Owner.name) ? deal.Owner.name : null;
+    const ownerName = getOwnerName(deal);
     if (ownerName) ownerNames.add(ownerName);
   });
 
@@ -65,6 +71,9 @@ function populateOwnerDropdown() {
   ownerSelect.addEventListener("change", renderStages);
 }
 
+// Fetch ONLY the selected year's Deals using COQL, split month-by-month to stay
+// under Zoho's 2000-offset limit per query. Months are fetched in small parallel
+// batches (not all 12 at once, not one-by-one) to balance speed vs rate limits.
 async function fetchDealsForYear(year) {
   const container = document.getElementById("stagesContainer");
   container.innerHTML = `<p class="loading-text">Loading Deals for ${year}...</p>`;
@@ -94,7 +103,7 @@ async function fetchDealsForYear(year) {
         break;
       }
 
-      const query = `select Deal_Name, Amount, Closing_Date, Stage, Owner from Deals where Closing_Date between '${startDate}' and '${endDate}' limit ${limit} offset ${offset}`;
+      const query = `select Deal_Name, Amount, Closing_Date, Stage, Owner.name from Deals where Closing_Date between '${startDate}' and '${endDate}' limit ${limit} offset ${offset}`;
 
       try {
         const response = await ZOHO.CRM.API.coql({ select_query: query });
@@ -160,7 +169,7 @@ function renderStages() {
 
   const filteredDeals = allDeals.filter(deal => {
     if (selectedOwner !== "All") {
-      const ownerName = (deal.Owner && deal.Owner.name) ? deal.Owner.name : null;
+      const ownerName = getOwnerName(deal);
       if (ownerName !== selectedOwner) return false;
     }
     return true;
