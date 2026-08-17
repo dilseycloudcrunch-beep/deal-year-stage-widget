@@ -30,6 +30,30 @@ function populateYearDropdown() {
   yearSelect.addEventListener("change", renderStages);
 }
 
+// Populate Owner Dropdown dynamically from fetched Deals (unique Owner names)
+function populateOwnerDropdown() {
+  const ownerSelect = document.getElementById("ownerSelect");
+
+  // Collect unique owner names from allDeals
+  const ownerNames = new Set();
+  allDeals.forEach(deal => {
+    const ownerName = (deal.Owner && deal.Owner.name) ? deal.Owner.name : null;
+    if (ownerName) ownerNames.add(ownerName);
+  });
+
+  // Clear existing options except "All Owners"
+  ownerSelect.innerHTML = `<option value="All">All Owners</option>`;
+
+  Array.from(ownerNames).sort().forEach(name => {
+    const option = document.createElement("option");
+    option.value = name;
+    option.text = name;
+    ownerSelect.appendChild(option);
+  });
+
+  ownerSelect.addEventListener("change", renderStages);
+}
+
 // Fetch all Deals using Zoho SDK API
 async function fetchDeals() {
   try {
@@ -40,6 +64,7 @@ async function fetchDeals() {
     });
     if (response && response.data) {
       allDeals = response.data;
+      populateOwnerDropdown();
       renderStages();
     } else {
       document.getElementById("stagesContainer").innerHTML = "<p>No Deals found.</p>";
@@ -54,16 +79,23 @@ async function fetchDeals() {
 // Render Stage rows (one below another). Each row expands to show its deals on click.
 function renderStages() {
   const selectedYear = parseInt(document.getElementById("yearSelect").value);
+  const selectedOwner = document.getElementById("ownerSelect").value;
   const container = document.getElementById("stagesContainer");
   container.innerHTML = "";
   activeStage = null;
 
-  // Filter deals based on Closing Date year
+  // Filter deals based on Closing Date year and selected Owner
   const filteredDeals = allDeals.filter(deal => {
     const dateStr = deal.Closing_Date || deal.Created_Time;
     if (!dateStr) return false;
     const dealYear = new Date(dateStr).getFullYear();
-    return dealYear === selectedYear;
+    if (dealYear !== selectedYear) return false;
+
+    if (selectedOwner !== "All") {
+      const ownerName = (deal.Owner && deal.Owner.name) ? deal.Owner.name : null;
+      if (ownerName !== selectedOwner) return false;
+    }
+    return true;
   });
 
   // Group filtered deals by Stage
@@ -77,7 +109,7 @@ function renderStages() {
   });
 
   if (Object.keys(dealsByStage).length === 0) {
-    container.innerHTML = `<p>No Deals found for the year ${selectedYear}.</p>`;
+    container.innerHTML = `<p>No Deals found for the selected filters.</p>`;
     return;
   }
 
