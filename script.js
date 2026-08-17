@@ -4,6 +4,9 @@ let activeStage = null;
 let currentFetchId = 0;  // guards against race conditions between year switches
 let ownerIdToName = {};  // maps Owner id -> Owner full name
 
+// Base URL to build direct links to individual Deal records
+const DEAL_RECORD_BASE_URL = "https://crmplus.zoho.com/proctorgallagherinstitute/index.do/cxapp/crm/org908687475/tab/Potentials/";
+
 // Initialize Zoho Embedded App SDK
 ZOHO.embeddedApp.on("PageLoad", async function (data) {
   ZOHO.CRM.UI.Resize({ height: "700px", width: "50%" }).then(function () {
@@ -47,6 +50,12 @@ function getOwnerName(deal) {
   const ownerId = deal.Owner && deal.Owner.id;
   if (!ownerId) return null;
   return ownerIdToName[ownerId] || null;
+}
+
+// Helper: build a direct link to a Deal's record page
+function getDealRecordUrl(deal) {
+  if (!deal || !deal.id) return null;
+  return `${DEAL_RECORD_BASE_URL}${deal.id}`;
 }
 
 // Populate Year Dropdown dynamically (e.g., last 5 years + next year)
@@ -225,8 +234,14 @@ function renderStages() {
       const dealCard = document.createElement("div");
       dealCard.className = "deal-card";
       const ownerName = getOwnerName(deal) || "N/A";
+      const recordUrl = getDealRecordUrl(deal);
+
+      const dealNameHtml = recordUrl
+        ? `<a href="${recordUrl}" target="_blank" rel="noopener noreferrer" style="color:#1d4ed8; text-decoration:none;">${deal.Deal_Name || "Unnamed Deal"}</a>`
+        : (deal.Deal_Name || "Unnamed Deal");
+
       dealCard.innerHTML = `
-        <div class="deal-name">${deal.Deal_Name || "Unnamed Deal"}</div>
+        <div class="deal-name">${dealNameHtml}</div>
         <div class="deal-info">Amount: $${deal.Amount || 0}</div>
         <div class="deal-info">Closing: ${deal.Closing_Date || "N/A"}</div>
         <div class="deal-info">Owner: ${ownerName}</div>
