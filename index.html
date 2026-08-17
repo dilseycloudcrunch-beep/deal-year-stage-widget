@@ -11,15 +11,19 @@
 <body>
   <div class="container">
     <h2>     </h2>
-
     <!-- Year Dropdown Filter -->
     <div class="filter-section">
       <label for="yearSelect">Select Year: </label>
       <select id="yearSelect">
         <!-- Years will be populated dynamically via JS -->
       </select>
-    </div>
 
+      <label for="ownerSelect" style="margin-left:15px;">Select Owner: </label>
+      <select id="ownerSelect">
+        <option value="All">All Owners</option>
+        <!-- Owners will be populated dynamically via JS -->
+      </select>
+    </div>
     <!-- Stages Accordion (each stage row, deals expand right below it) -->
     <div id="stagesContainer" class="stages-container">
       <p class="loading-text">Loading Deals...</p>
