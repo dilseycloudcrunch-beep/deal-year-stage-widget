@@ -1,4 +1,4 @@
-let allDeals = [];
+let allDeals = [];       // currently loaded (selected year's) deals
 let dealsByStage = {};
 let activeStage = null;
 
@@ -11,10 +11,14 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
   populateYearDropdown();
   // Thoda delay do taaki SDK ka parent-window bridge fully ready ho jaye
   setTimeout(async function () {
-    await fetchDeals();
+    await fetchDealsForYear(getSelectedYear());
   }, 400);
 });
 ZOHO.embeddedApp.init();
+
+function getSelectedYear() {
+  return parseInt(document.getElementById("yearSelect").value);
+}
 
 // Populate Year Dropdown dynamically (e.g., last 5 years + next year)
 function populateYearDropdown() {
@@ -27,12 +31,16 @@ function populateYearDropdown() {
     if (year === currentYear) option.selected = true;
     yearSelect.appendChild(option);
   }
-  yearSelect.addEventListener("change", renderStages);
+  // Year change -> re-fetch only that year's data from CRM
+  yearSelect.addEventListener("change", async function () {
+    await fetchDealsForYear(getSelectedYear());
+  });
 }
 
-// Populate Owner Dropdown dynamically from fetched Deals (unique Owner names)
+// Populate Owner Dropdown dynamically from currently loaded (selected year's) Deals
 function populateOwnerDropdown() {
   const ownerSelect = document.getElementById("ownerSelect");
+  const previousValue = ownerSelect.value || "All";
 
   // Collect unique owner names from allDeals
   const ownerNames = new Set();
@@ -51,46 +59,75 @@ function populateOwnerDropdown() {
     ownerSelect.appendChild(option);
   });
 
+  // Restore previous selection if it still exists in this year's owner list
+  if ([...ownerSelect.options].some(o => o.value === previousValue)) {
+    ownerSelect.value = previousValue;
+  }
+
   ownerSelect.addEventListener("change", renderStages);
 }
 
-// Fetch all Deals using Zoho SDK API
-async function fetchDeals() {
+// Fetch ONLY the selected year's Deals using COQL, split month-by-month to stay
+// under Zoho's 2000-offset limit per query, and paginated in batches of 200.
+async function fetchDealsForYear(year) {
+  const container = document.getElementById("stagesContainer");
+  container.innerHTML = `<p class="loading-text">Loading Deals for ${year}...</p>`;
+
   try {
-    const response = await ZOHO.CRM.API.getAllRecords({
-      Entity: "Deals",
-      sort_order: "desc",
-      per_page: 200
-    });
-    if (response && response.data) {
-      allDeals = response.data;
+    allDeals = [];
+    const limit = 200;
+    const maxOffset = 2000; // Zoho COQL hard limit
+
+    // Loop through each month of the selected year
+    for (let month = 1; month <= 12; month++) {
+      const monthStr = String(month).padStart(2, "0");
+      const lastDay = new Date(year, month, 0).getDate(); // last date of this month
+      const startDate = `${year}-${monthStr}-01`;
+      const endDate = `${year}-${monthStr}-${lastDay}`;
+
+      let offset = 0;
+      let moreRecords = true;
+
+      while (moreRecords) {
+        if (offset > maxOffset) {
+          console.warn(`Offset limit reached for ${year}-${monthStr}, some records may be skipped.`);
+          break;
+        }
+
+        const query = `select Deal_Name, Amount, Closing_Date, Stage, Owner from Deals where Closing_Date between '${startDate}' and '${endDate}' limit ${limit} offset ${offset}`;
+
+        const response = await ZOHO.CRM.API.coql({ select_query: query });
+
+        if (response && response.data && response.data.length > 0) {
+          allDeals = allDeals.concat(response.data);
+        }
+
+        moreRecords = !!(response && response.info && response.info.more_records) && response.data && response.data.length === limit;
+        offset += limit;
+      }
+    }
+
+    if (allDeals.length > 0) {
       populateOwnerDropdown();
       renderStages();
     } else {
-      document.getElementById("stagesContainer").innerHTML = "<p>No Deals found.</p>";
+      container.innerHTML = `<p>No Deals found for ${year}.</p>`;
     }
   } catch (error) {
     console.error("Error fetching Deals:", error);
-    document.getElementById("stagesContainer").innerHTML =
-      "<p>Error loading Deals data. Check console (F12) for details.</p>";
+    container.innerHTML = "<p>Error loading Deals data. Check console (F12) for details.</p>";
   }
 }
 
-// Render Stage rows (one below another). Each row expands to show its deals on click.
+// Render Stage rows (one below another). allDeals is already scoped to the selected year.
 function renderStages() {
-  const selectedYear = parseInt(document.getElementById("yearSelect").value);
   const selectedOwner = document.getElementById("ownerSelect").value;
   const container = document.getElementById("stagesContainer");
   container.innerHTML = "";
   activeStage = null;
 
-  // Filter deals based on Closing Date year and selected Owner
+  // Filter by selected Owner only (year filtering already done at fetch time)
   const filteredDeals = allDeals.filter(deal => {
-    const dateStr = deal.Closing_Date || deal.Created_Time;
-    if (!dateStr) return false;
-    const dealYear = new Date(dateStr).getFullYear();
-    if (dealYear !== selectedYear) return false;
-
     if (selectedOwner !== "All") {
       const ownerName = (deal.Owner && deal.Owner.name) ? deal.Owner.name : null;
       if (ownerName !== selectedOwner) return false;
