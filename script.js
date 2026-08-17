@@ -1,6 +1,7 @@
 let allDeals = [];       // currently loaded (selected year's) deals
 let dealsByStage = {};
 let activeStage = null;
+let currentFetchId = 0;  // guards against race conditions between year switches
 
 // Initialize Zoho Embedded App SDK
 ZOHO.embeddedApp.on("PageLoad", async function (data) {
@@ -42,14 +43,12 @@ function populateOwnerDropdown() {
   const ownerSelect = document.getElementById("ownerSelect");
   const previousValue = ownerSelect.value || "All";
 
-  // Collect unique owner names from allDeals
   const ownerNames = new Set();
   allDeals.forEach(deal => {
     const ownerName = (deal.Owner && deal.Owner.name) ? deal.Owner.name : null;
     if (ownerName) ownerNames.add(ownerName);
   });
 
-  // Clear existing options except "All Owners"
   ownerSelect.innerHTML = `<option value="All">All Owners</option>`;
 
   Array.from(ownerNames).sort().forEach(name => {
@@ -59,7 +58,6 @@ function populateOwnerDropdown() {
     ownerSelect.appendChild(option);
   });
 
-  // Restore previous selection if it still exists in this year's owner list
   if ([...ownerSelect.options].some(o => o.value === previousValue)) {
     ownerSelect.value = previousValue;
   }
@@ -69,19 +67,25 @@ function populateOwnerDropdown() {
 
 // Fetch ONLY the selected year's Deals using COQL, split month-by-month to stay
 // under Zoho's 2000-offset limit per query, and paginated in batches of 200.
+// A fetchId guard ensures that if the user switches years quickly, an older
+// in-flight request can never overwrite the results of a newer one.
 async function fetchDealsForYear(year) {
   const container = document.getElementById("stagesContainer");
   container.innerHTML = `<p class="loading-text">Loading Deals for ${year}...</p>`;
 
-  try {
-    allDeals = [];
-    const limit = 200;
-    const maxOffset = 2000; // Zoho COQL hard limit
+  currentFetchId += 1;
+  const thisFetchId = currentFetchId;
 
-    // Loop through each month of the selected year
+  const yearDeals = []; // local, not shared with other in-flight calls
+  const limit = 200;
+  const maxOffset = 2000; // Zoho COQL hard limit
+
+  try {
     for (let month = 1; month <= 12; month++) {
+      if (thisFetchId !== currentFetchId) return; // a newer year was selected, abort
+
       const monthStr = String(month).padStart(2, "0");
-      const lastDay = new Date(year, month, 0).getDate(); // last date of this month
+      const lastDay = new Date(year, month, 0).getDate();
       const startDate = `${year}-${monthStr}-01`;
       const endDate = `${year}-${monthStr}-${lastDay}`;
 
@@ -89,6 +93,8 @@ async function fetchDealsForYear(year) {
       let moreRecords = true;
 
       while (moreRecords) {
+        if (thisFetchId !== currentFetchId) return;
+
         if (offset > maxOffset) {
           console.warn(`Offset limit reached for ${year}-${monthStr}, some records may be skipped.`);
           break;
@@ -98,14 +104,20 @@ async function fetchDealsForYear(year) {
 
         const response = await ZOHO.CRM.API.coql({ select_query: query });
 
+        if (thisFetchId !== currentFetchId) return; // check again after await
+
         if (response && response.data && response.data.length > 0) {
-          allDeals = allDeals.concat(response.data);
+          yearDeals.push(...response.data);
         }
 
         moreRecords = !!(response && response.info && response.info.more_records) && response.data && response.data.length === limit;
         offset += limit;
       }
     }
+
+    if (thisFetchId !== currentFetchId) return; // only commit if still latest
+
+    allDeals = yearDeals;
 
     if (allDeals.length > 0) {
       populateOwnerDropdown();
@@ -114,6 +126,7 @@ async function fetchDealsForYear(year) {
       container.innerHTML = `<p>No Deals found for ${year}.</p>`;
     }
   } catch (error) {
+    if (thisFetchId !== currentFetchId) return;
     console.error("Error fetching Deals:", error);
     container.innerHTML = "<p>Error loading Deals data. Check console (F12) for details.</p>";
   }
@@ -126,7 +139,6 @@ function renderStages() {
   container.innerHTML = "";
   activeStage = null;
 
-  // Filter by selected Owner only (year filtering already done at fetch time)
   const filteredDeals = allDeals.filter(deal => {
     if (selectedOwner !== "All") {
       const ownerName = (deal.Owner && deal.Owner.name) ? deal.Owner.name : null;
@@ -135,7 +147,6 @@ function renderStages() {
     return true;
   });
 
-  // Group filtered deals by Stage
   dealsByStage = {};
   filteredDeals.forEach(deal => {
     const stage = deal.Stage || "Unassigned";
@@ -150,7 +161,6 @@ function renderStages() {
     return;
   }
 
-  // Build one block per Stage: header row + hidden deals list below it
   Object.keys(dealsByStage).forEach(stage => {
     const stageBlock = document.createElement("div");
     stageBlock.className = "stage-block";
@@ -185,7 +195,6 @@ function renderStages() {
 function toggleStage(stage, stageBlockEl) {
   const wasActive = stageBlockEl.classList.contains("active");
 
-  // Close whichever stage was open before
   document.querySelectorAll(".stage-block.active").forEach(el => el.classList.remove("active"));
 
   if (wasActive) {
